@@ -1,14 +1,14 @@
-import React from "react";
+import React, { use } from "react";
 import { useContext } from "react";
 import { UserContext } from "../context/UserContext";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "../config/axios";
 
 const Home = () => {
   const { user } = useContext(UserContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
-
+  const [projects, setProjects] = useState([]);
   const handleModalOpen = () => {
     setIsModalOpen(true);
   };
@@ -39,18 +39,58 @@ const Home = () => {
       });
   };
 
+  useEffect(() => {
+    axios
+      .get("/projects/all")
+      .then((res) => {
+        console.log(res.data);
+        setProjects(res.data);
+      })
+      .catch((err) => {
+        console.log(err);
+      });
+  }, []);
+
+  useEffect(() => {
+    console.log("Updated projects:", projects); // This will show the new value
+  }, [projects]);
+
   return (
     <main className="p-8 bg-gray-50 min-h-screen">
-      <div className="max-w-7xl mx-auto">
-        <div className="">
-          <button
-            className="bg-blue-600 text-white px-6 py-3 rounded-lg shadow-md hover:bg-blue-700 transition duration-300 flex items-center"
-            onClick={handleModalOpen}
+      <div className="projects flex flex-wrap gap-3">
+        <button
+          onClick={handleModalOpen}
+          className="project p-4 border border-slate-300 rounded-md"
+        >
+          New Project
+          <i className="ri-link ml-2"></i>
+        </button>
+
+        {projects.map((project) => (
+          <div
+            key={project._id}
+            onClick={() => {
+              navigate(`/project`, {
+                state: { project },
+              });
+            }}
+            className="project flex flex-col gap-2 cursor-pointer p-4 border border-slate-300 rounded-md min-w-52 hover:bg-slate-200"
           >
-            <i className="ri-link mr-2"></i>
-            New Project
-          </button>
-        </div>
+            <h2 className="font-semibold">{project.name}</h2>
+
+            <div className="flex gap-2">
+              <p>
+                {" "}
+                <small>
+                  {" "}
+                  <i className="ri-user-line"></i> Collaborators
+                </small>{" "}
+                :
+              </p>
+              {project.users.length}
+            </div>
+          </div>
+        ))}
       </div>
 
       {isModalOpen && (
