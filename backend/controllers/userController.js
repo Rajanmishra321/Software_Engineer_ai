@@ -1,5 +1,5 @@
 import User from "../models/userModel.js";
-import userService from "../services/userService.js";
+import * as userService from "../services/userService.js";
 import { validationResult } from "express-validator";
 import redisClient from "../services/redisService.js";
 
@@ -75,5 +75,18 @@ export const logoutController = async (req, res) => {
   } catch (error) {
     console.log(error);
     return res.status(500).json({ error: error.message });
+  }
+};
+
+
+export const getAllUsersController = async (req, res) => {
+  try {
+    const loggedInUser = await User.findOne({ email: req.user.email });
+    const userId = loggedInUser._id;
+    const users = await userService.getAllUsers(userId);
+    res.status(200).json(users);
+  } catch (error) {
+    console.log(error);
+    res.status(400).json({ message: error.message });
   }
 };
