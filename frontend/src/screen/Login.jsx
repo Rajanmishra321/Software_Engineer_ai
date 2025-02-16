@@ -118,6 +118,7 @@ const Login = () => {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               type="submit"
+              id="loginButton"
               disabled={isLoading}
               className="w-full bg-blue-500 text-white py-3 rounded-xl hover:bg-blue-600 transition duration-300 ease-in-out flex items-center justify-center"
             >

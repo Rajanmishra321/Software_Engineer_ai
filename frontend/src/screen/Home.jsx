@@ -2,6 +2,7 @@ import React, { use } from "react";
 import { useContext } from "react";
 import { UserContext } from "../context/UserContext";
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "../config/axios";
 
 const Home = () => {
@@ -9,6 +10,7 @@ const Home = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projects, setProjects] = useState([]);
+  const navigate = useNavigate();
   const handleModalOpen = () => {
     setIsModalOpen(true);
   };
@@ -51,10 +53,6 @@ const Home = () => {
       });
   }, []);
 
-  useEffect(() => {
-    console.log("Updated projects:", projects); // This will show the new value
-  }, [projects]);
-
   return (
     <main className="p-8 bg-gray-50 min-h-screen">
       <div className="projects flex flex-wrap gap-3">
@@ -68,6 +66,7 @@ const Home = () => {
 
         {projects.map((project) => (
           <div
+            alt="project"
             key={project._id}
             onClick={() => {
               navigate(`/project`, {
@@ -77,7 +76,6 @@ const Home = () => {
             className="project flex flex-col gap-2 cursor-pointer p-4 border border-slate-300 rounded-md min-w-52 hover:bg-slate-200"
           >
             <h2 className="font-semibold">{project.name}</h2>
-
             <div className="flex gap-2">
               <p>
                 {" "}
