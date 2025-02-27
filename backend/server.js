@@ -1,11 +1,23 @@
-import 'dotenv/config'
-import http from 'http'
-import app from './app.js'
+import "dotenv/config";
+import http from "http";
+import app from "./app.js";
+import { Server } from "socket.io";
 
-const server = http.createServer(app)
+const server = http.createServer(app);
 
-const port = process.env.PORT || 3001
+const io = new Server(server);
+io.on("connection", (client) => {
+  console.log("client connected");
+  client.on("event", (data) => {
+    /* … */
+  });
+  client.on("disconnect", () => {
+    /* … */
+  });
+});
 
-server.listen(port,()=>{
-    console.log(`server is running on ${port}`)
-})
+const port = process.env.PORT || 3001;
+
+server.listen(port, () => {
+  console.log(`server is running on ${port}`);
+});
