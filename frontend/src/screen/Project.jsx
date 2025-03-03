@@ -1,11 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import axios from "../config/axios";
+import { initializeSocket, receiveMessage, sendMessage } from "../config/socket";
+import { UserContext } from "../context/UserContext";
+// import { set } from "mongoose";
 
 export const Project = () => {
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState(new Set());
+  const [message, setMessage] = useState("");
+  const {user} = useContext(UserContext)
   const [users, setUsers] = useState([]);
   const location = useLocation();
   const [project, setProject] = useState(location.state.project);
@@ -36,7 +41,23 @@ export const Project = () => {
       });
   };
 
+  const handleSendMessage = () => {
+    console.log(user)
+    sendMessage("project-message",{
+      message,
+      sender:user._id
+    });
+    
+    setMessage("");
+  }
+
   useEffect(() => {
+
+    initializeSocket(project._id);
+
+    receiveMessage("project-message", (data) => {
+      console.log(data)
+    })
 
     axios
     .get(`/projects/all-project/${project._id}`)
@@ -83,11 +104,13 @@ export const Project = () => {
           </div>
           <div className="input-field w-full flex bg-amber-200 ">
             <input
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
               type="text"
               placeholder="Enter Message"
               className="p-2 px-5 border-none flex-grow outline-none"
             />
-            <button className="px-7 bg-slate-900 text-white">
+            <button onClick={handleSendMessage}  className="px-7 bg-slate-900 text-white">
               <i className="ri-send-plane-fill"></i>
             </button>
           </div>
@@ -203,3 +226,5 @@ export const Project = () => {
     </main>
   );
 };
+
+export default Project;

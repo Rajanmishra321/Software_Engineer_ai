@@ -11,7 +11,7 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const Navigate = useNavigate();
+  const navigate = useNavigate();
   const { setUser } = useContext(UserContext);
 
   const handleSubmit = (e) => {
@@ -21,14 +21,20 @@ const Login = () => {
     axios
       .post("/users/login", { email, password })
       .then((res) => {
+        // Fix: Use consistent case for token storage
         localStorage.setItem("Token", res.data.user.token);
         setUser(res.data.user);
-        Navigate("/");
+        navigate("/");
       })
       .catch((err) => {
         setError(err.response?.data?.message || "Login failed. Please try again.");
         setIsLoading(false);
       });
+  };
+
+  // Fix: Separate toggle function for password visibility
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
   };
 
   return (
@@ -125,7 +131,7 @@ const Login = () => {
             />
             <button
               type="button"
-              onClick={() => setShowPassword(!showPassword)}
+              onClick={togglePasswordVisibility}
               className="absolute right-3 top-1/2 transform -translate-y-1/2 text-indigo-400 hover:text-indigo-600"
             >
               {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
