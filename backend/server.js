@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 import Project from "./models/projectModel.js";
+import { generateResult } from "./services/aiService.js";
 
 const server = http.createServer(app);
 
@@ -67,20 +68,36 @@ io.on("connection", (socket) => {
 
   socket.join(socket.roomId);
 
-  socket.on('project-message',data=>{
-    console.log(data)
-    socket.broadcast.to(socket.roomId).emit('project-message',data)
+  socket.on('project-message', async data => {
+    const message = data.message
+    const isAiPresentInMessage = message.includes('@ai')
+
+    socket.broadcast.to(socket.roomId).emit('project-message', data)
+
+    if (isAiPresentInMessage) {
+      const prompt = message.replace('@ai', '')
+
+      const result = await generateResult(prompt)
+
+      io.to(socket.roomId).emit('project-message', {
+        message: result,
+        sender: {
+          name: "AI",
+          email: "SOEN"
+        }
+      })
+
+      return
+
+    }
+    
   })
 
-  // Handle events
-  socket.on("event", (data) => {
-    console.log("Received event:", data);
-    // Handle event data here
-  });
 
   // Handle disconnect
   socket.on("disconnect", () => {
     console.log(`Client disconnected:`);
+    socket.leave(socket.roomId);
   });
 
   // Send welcome message to confirm connection

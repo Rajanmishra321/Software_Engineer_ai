@@ -4,6 +4,7 @@ import connectDb from './db/db.js'
 import userRoutes from './routes/userRoutes.js'
 import cookieParser from 'cookie-parser'
 import projectRoutes from './routes/projectRoutes.js'
+import aiRoutes from './routes/aiRoutes.js'
 import cors from 'cors'
 const app = express()
 
@@ -17,6 +18,7 @@ app.use(cors())
 connectDb()
 app.use('/users',userRoutes)
 app.use('/projects',projectRoutes)
+app.use("/ai",aiRoutes)
 
 app.get('/',(req,res)=>{
     res.send('hello world')
