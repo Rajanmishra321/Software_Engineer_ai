@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.0.5",
+    "@webcontainer/api": "^1.5.1-internal.9",
     "axios": "^1.7.9",
     "framer-motion": "^12.4.2",
+    "highlight.js": "^11.11.1",
     "lucide-react": "^0.475.0",
     "markdown-to-jsx": "^7.7.4",
     "prismjs": "^1.29.0",

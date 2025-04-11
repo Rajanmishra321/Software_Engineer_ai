@@ -66,3 +66,20 @@ export const getAllUsersInProject = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 }
+
+
+export const updateFileTree = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  try {
+    const { projectId, fileTree } = req.body;
+    const updatedProject = await projectService.updateFileTree({ projectId, fileTree });
+    res.status(200).json(updatedProject);
+  } catch (error) {
+    console.log(error);
+    res.status(400).json({ message: error.message });
+  }
+}
