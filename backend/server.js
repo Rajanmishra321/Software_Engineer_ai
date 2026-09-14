@@ -39,6 +39,11 @@ io.use(async (socket, next) => {
 
     socket.project = await Project.findById(projectId);
 
+    // Without this, the connection handler crashed reading `_id` of null.
+    if (!socket.project) {
+      return next(new Error("Authentication failed: Project not found"));
+    }
+
     if (!token) {
       return next(new Error("Authentication failed: No token provided"));
     }
@@ -69,28 +74,39 @@ io.on("connection", (socket) => {
   socket.join(socket.roomId);
 
   socket.on('project-message', async data => {
-    const message = data.message
-    const isAiPresentInMessage = message.includes('@ai')
+    const message = data?.message
+    if (typeof message !== 'string') return
 
     socket.broadcast.to(socket.roomId).emit('project-message', data)
 
-    if (isAiPresentInMessage) {
-      const prompt = message.replace('@ai', '')
+    // File-sync payloads are JSON and may contain "@ai" inside file contents;
+    // only real chat text should trigger the AI.
+    const isFileUpdate = message.startsWith('{"fileUpdate"')
+    if (isFileUpdate || !message.includes('@ai')) return
 
-      const result = await generateResult(prompt)
-
+    const emitAiMessage = (payload) => {
       io.to(socket.roomId).emit('project-message', {
-        message: result,
+        message: payload,
         sender: {
           name: "AI",
           email: "SOEN"
         }
       })
-
-      return
-
     }
-    
+
+    try {
+      const result = await generateResult(message.replace('@ai', ''))
+      emitAiMessage(result)
+    } catch (error) {
+      // An unhandled rejection here used to crash the whole server.
+      console.log("AI generation error:", error.message)
+      const isBusy = error.status === 429 || error.status === 503
+      emitAiMessage(JSON.stringify({
+        text: isBusy
+          ? "The AI service is busy right now. Please try again in a few seconds."
+          : "Sorry, I couldn't generate a response right now. Please try again in a moment."
+      }))
+    }
   })
 
 

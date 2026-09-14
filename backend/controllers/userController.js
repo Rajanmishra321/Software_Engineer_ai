@@ -2,6 +2,7 @@ import User from "../models/userModel.js";
 import * as userService from "../services/userService.js";
 import { validationResult } from "express-validator";
 import redisClient from "../services/redisService.js";
+import { isDuplicateKeyError } from "../utils/errors.js";
 
 export const createUserController = async (req, res) => {
   const errors = validationResult(req);
@@ -25,6 +26,9 @@ export const createUserController = async (req, res) => {
       },
     });
   } catch (err) {
+    if (isDuplicateKeyError(err)) {
+      return res.status(409).json({ error: "An account with this email already exists" });
+    }
     res.status(500).json({ error: err.message });
   }
 };
@@ -33,8 +37,7 @@ export const loginController = async (req, res) => {
   const error = validationResult(req);
 
   if (!error.isEmpty()) {
-    console.log(error);
-    res.status(400).json({ errors: error.array() });
+    return res.status(400).json({ errors: error.array() });
   }
 
   try {
@@ -56,6 +59,7 @@ export const loginController = async (req, res) => {
     });
   } catch (error) {
     console.log(error);
+    return res.status(500).json({ error: error.message });
   }
 };
 

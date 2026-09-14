@@ -64,8 +64,11 @@ axiosInstance.interceptors.response.use(
     return response;
   },
   (error) => {
-    // If 401 Unauthorized response, redirect to login
-    if (error.response && error.response.status === 401) {
+    // A 401 on an authenticated request means the session expired: send the
+    // user to login. A 401 from the login call itself is just a wrong
+    // password - redirecting there would reload the page and hide the error.
+    const isLoginRequest = error.config?.url?.includes('/users/login');
+    if (error.response?.status === 401 && !isLoginRequest) {
       localStorage.removeItem('Token');
       window.location.href = '/login';
     }

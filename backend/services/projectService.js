@@ -78,24 +78,22 @@ export const addUserToProject = async ({ projectId, users, userId }) => {
 };
 
 export const getAllUsersInProject = async ({ projectId }) => {
-  try {
-    if (!projectId) {
-        throw new Error("Project id is required");
-      }
-    
-      if (!mongoose.Types.ObjectId.isValid(projectId)) {
-        throw new Error("Invalid project id");
-      }
-    
-      const project = await projectModel.findOne({ _id: projectId }).populate("users");
-    
-      return project;        
-    
-  } catch (error) {
-    console.log(error);
-    res.status(400).json({ message: error.message });
-    
+  if (!projectId) {
+    throw new Error("Project id is required");
   }
+
+  if (!mongoose.Types.ObjectId.isValid(projectId)) {
+    throw new Error("Invalid project id");
+  }
+
+  // The previous catch block called `res`, which doesn't exist in a
+  // service, so every failure turned into a ReferenceError.
+  const project = await projectModel.findOne({ _id: projectId }).populate("users");
+  if (!project) {
+    throw new Error("Project not found");
+  }
+
+  return project;
 };
 
 

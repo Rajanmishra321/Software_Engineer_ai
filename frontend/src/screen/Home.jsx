@@ -1,141 +1,158 @@
-import React, { use } from "react";
-import { useContext } from "react";
-import { UserContext } from "../context/UserContext";
-import { useState, useEffect } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FolderPlus, Users, Loader2 } from "lucide-react";
+import { UserContext } from "../context/UserContext";
 import axios from "../config/axios";
+import { getErrorMessage } from "../utils/messages";
+import Navbar from "../components/Navbar";
+import Button from "../components/ui/Button";
+import TextField from "../components/ui/TextField";
 
 const Home = () => {
   const { user } = useContext(UserContext);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projects, setProjects] = useState([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const navigate = useNavigate();
-  const handleModalOpen = () => {
-    setIsModalOpen(true);
-  };
+
+  const handleModalOpen = () => setIsModalOpen(true);
 
   const handleModalClose = () => {
     setIsModalOpen(false);
-  };
-
-  const handleProjectNameChange = (e) => {
-    setProjectName(e.target.value);
+    setCreateError("");
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Do something with the project name
-    console.log(projectName);
-    // Reset the project name
-    setProjectName("");
+    if (!projectName.trim()) return;
+
+    setIsCreating(true);
+    setCreateError("");
 
     axios
       .post("/projects/create", { name: projectName })
       .then((res) => {
-        console.log(res.data);
+        // Fix: append the new project instead of leaving the list stale
+        // until the next full reload.
+        setProjects((prev) => [...prev, res.data.project ?? res.data]);
+        setProjectName("");
         setIsModalOpen(false);
       })
       .catch((err) => {
-        console.log(err);
-      });
+        setCreateError(getErrorMessage(err, "Could not create project."));
+      })
+      .finally(() => setIsCreating(false));
   };
 
   useEffect(() => {
     axios
       .get("/projects/all")
-      .then((res) => {
-        console.log(res.data);
-        setProjects(res.data);
-      })
-      .catch((err) => {
-        console.log(err);
-      });
+      .then((res) => setProjects(res.data))
+      .catch((err) => console.error("Error fetching projects:", err))
+      .finally(() => setIsLoadingProjects(false));
   }, []);
 
   return (
-    <main className="p-8 bg-gray-50 min-h-screen">
-      <div className="projects flex flex-wrap gap-3">
-        <button
-          onClick={handleModalOpen}
-          className="project p-4 border border-slate-300 rounded-md"
-        >
-          New Project
-          <i className="ri-link ml-2"></i>
-        </button>
+    <div className="min-h-screen bg-slate-50">
+      <Navbar />
 
-        {projects.map((project) => (
-          <div
-            alt="project"
-            key={project._id}
-            onClick={() => {
-              navigate(`/project`, {
-                state: { project },
-              });
-            }}
-            className="project flex flex-col gap-2 cursor-pointer p-4 border border-slate-300 rounded-md min-w-52 hover:bg-slate-200"
-          >
-            <h2 className="font-semibold">{project.name}</h2>
-            <div className="flex gap-2">
-              <p>
-                {" "}
-                <small>
-                  {" "}
-                  <i className="ri-user-line"></i> Collaborators
-                </small>{" "}
-                :
-              </p>
-              {project.users.length}
-            </div>
+      <main className="mx-auto max-w-6xl p-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Your Projects</h1>
+            <p className="mt-1 text-sm text-slate-500">
+              {user?.email ? `Signed in as ${user.email}` : "Pick up where you left off"}
+            </p>
           </div>
-        ))}
-      </div>
+          <Button onClick={handleModalOpen}>
+            <FolderPlus size={18} />
+            New Project
+          </Button>
+        </div>
+
+        {isLoadingProjects ? (
+          <div className="flex items-center gap-2 py-12 text-slate-500">
+            <Loader2 size={20} className="animate-spin" />
+            Loading projects...
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-16 text-center">
+            <FolderPlus size={36} className="mb-3 text-slate-300" />
+            <p className="font-medium text-slate-600">No projects yet</p>
+            <p className="mt-1 text-sm text-slate-400">
+              Create your first project to start collaborating.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {projects.map((project) => (
+              <div
+                key={project._id}
+                onClick={() => navigate(`/project/${project._id}`, { state: { project } })}
+                className="group cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md"
+              >
+                <h2 className="truncate font-semibold text-slate-900 group-hover:text-indigo-600">
+                  {project.name}
+                </h2>
+                <div className="mt-3 flex items-center gap-1.5 text-sm text-slate-500">
+                  <Users size={16} />
+                  <span>
+                    {project.users?.length ?? 0} collaborator
+                    {project.users?.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
 
       {isModalOpen && (
-        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50">
-          <div className="bg-white rounded-xl shadow-2xl w-11/12 max-w-md">
-            <div className="p-6 border-b border-gray-200">
-              <h2 className="text-2xl font-semibold text-gray-800">
-                Create a New Project
-              </h2>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={handleModalClose}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-slate-100 p-6">
+              <h2 className="text-xl font-semibold text-slate-900">Create a New Project</h2>
             </div>
             <form onSubmit={handleSubmit} className="p-6">
-              <div className="mb-6">
-                <label
-                  htmlFor="projectName"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Project Name
-                </label>
-                <input
-                  type="text"
-                  id="projectName"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition duration-300"
-                  value={projectName}
-                  onChange={handleProjectNameChange}
-                  placeholder="Enter project name"
-                />
-              </div>
-              <div className="flex justify-end space-x-4">
-                <button
-                  type="button"
-                  className="px-6 py-2 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition duration-300"
-                  onClick={handleModalClose}
-                >
+              <label
+                htmlFor="projectName"
+                className="mb-2 block text-sm font-medium text-slate-700"
+              >
+                Project Name
+              </label>
+              <TextField
+                id="projectName"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Enter project name"
+                className="border-slate-300 bg-white text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:ring-indigo-500/30"
+                autoFocus
+                required
+              />
+              {createError && <p className="mt-2 text-sm text-red-600">{createError}</p>}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <Button type="button" variant="ghost" onClick={handleModalClose}>
                   Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition duration-300"
-                >
+                </Button>
+                <Button type="submit" loading={isCreating}>
                   Create
-                </button>
+                </Button>
               </div>
             </form>
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 };
 

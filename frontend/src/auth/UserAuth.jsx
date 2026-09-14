@@ -45,6 +45,7 @@ import React, { useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../context/UserContext';
 import axios from '../config/axios';
+import Spinner from '../components/ui/Spinner';
 
 const UserAuth = ({ children }) => {
     const { user, setUser, loading: contextLoading } = useContext(UserContext);
@@ -84,9 +85,11 @@ const UserAuth = ({ children }) => {
 
     // Show loading state if either context is loading or this component is loading
     if (contextLoading || loading) {
-        return <div className="flex justify-center items-center h-screen">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
-        </div>;
+        return (
+            <div className="flex h-screen items-center justify-center bg-slate-50">
+                <Spinner size={48} className="text-indigo-500" />
+            </div>
+        );
     }
 
     return <>{children}</>;
