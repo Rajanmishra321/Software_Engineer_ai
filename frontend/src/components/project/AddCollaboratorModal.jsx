@@ -74,7 +74,7 @@ const AddCollaboratorModal = ({ isOpen, users = [], memberIds, onClose, onConfir
                   isSelected ? "border-indigo-200 bg-indigo-50" : "border-transparent hover:bg-slate-50"
                 }`}
               >
-                <Avatar />
+                <Avatar email={candidate.email} />
                 <span className="truncate font-medium text-slate-800">{candidate.email}</span>
                 {isMember && <span className="ml-auto text-xs text-slate-400">Already added</span>}
                 {isSelected && <i className="ri-check-line ml-auto text-lg text-indigo-600"></i>}

@@ -1,3 +1,4 @@
+import { getToken } from "../utils/token";
 import socket from "socket.io-client";
 
 let socketInstance = null;
@@ -9,7 +10,7 @@ export const initializeSocket = (projectId) => {
 
     socketInstance = socket(import.meta.env.VITE_API_URL, {
         auth: {
-            token: localStorage.getItem("Token")
+            token: getToken()
         },
         query: {
             projectId
@@ -26,8 +27,9 @@ export const receiveMessage = (eventName, cb) => {
     return () => current?.off(eventName, cb);
 };
 
-export const sendMessage = (eventName, data) => {
-    socketInstance?.emit(eventName, data);
+/** `ack` is called with the server's reply, e.g. the stored message's id. */
+export const sendMessage = (eventName, data, ack) => {
+    socketInstance?.emit(eventName, data, ack);
 };
 
 export const disconnectSocket = () => {

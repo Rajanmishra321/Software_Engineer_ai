@@ -1,12 +1,13 @@
 import mongoose from 'mongoose'
 
 const projectSchema = new mongoose.Schema({
+    // Names are not globally unique: one user calling a project "todo app"
+    // must not stop everyone else from doing the same. Projects are
+    // identified by their id, and names are kept as typed.
     name:{
         type: String,
         required: true,
-        unique: [true,'Project name must be unique'],
-        trim: true,
-        lowercase: true
+        trim: true
     },
     users:[
         {
@@ -18,7 +19,7 @@ const projectSchema = new mongoose.Schema({
         type: Object,
         default: {}
     }
-})
+}, { timestamps: true })
 
 const Project = mongoose.model('project',projectSchema);
 export default Project;

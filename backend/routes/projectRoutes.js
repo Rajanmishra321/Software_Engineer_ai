@@ -22,6 +22,8 @@ router.put("/add-user",authMiddleware.authUser,
 
 router.get("/all-project/:projectId", authMiddleware.authUser, projectController.getAllUsersInProject);
 
+router.get("/:projectId/messages", authMiddleware.authUser, projectController.getProjectMessages);
+
 router.put('/update-file-tree', authMiddleware.authUser,
   body("projectId").isString().withMessage("Project ID is required"),
   body("fileTree").isObject().withMessage("File tree must be an object"),

@@ -94,6 +94,30 @@ const useProjectRunner = () => {
     }
   }, []);
 
+  /** Renames a file or folder inside the container. */
+  const renamePath = useCallback(async (from, to) => {
+    if (!isMountedRef.current) return;
+    try {
+      const container = await getWebContainer();
+      const dir = to.split("/").slice(0, -1).join("/");
+      if (dir) await container.fs.mkdir(dir, { recursive: true });
+      await container.fs.rename(from, to);
+    } catch (err) {
+      console.error(`Error renaming ${from} in WebContainer:`, err);
+    }
+  }, []);
+
+  /** Deletes a file or folder inside the container. */
+  const deletePath = useCallback(async (path) => {
+    if (!isMountedRef.current) return;
+    try {
+      const container = await getWebContainer();
+      await container.fs.rm(path, { recursive: true, force: true });
+    } catch (err) {
+      console.error(`Error deleting ${path} in WebContainer:`, err);
+    }
+  }, []);
+
   const stop = useCallback(() => {
     processRef.current?.kill();
     processRef.current = null;
@@ -126,7 +150,17 @@ const useProjectRunner = () => {
           }
         }
 
-        const { command, args } = resolveStartCommand(tree, aiStartCommand);
+        const startCommand = resolveStartCommand(tree, aiStartCommand);
+        if (!startCommand) {
+          appendOutput(
+            '\nNothing to run: add a "start" or "dev" script to package.json, ' +
+              "or an entry file such as index.js.\n"
+          );
+          setStatus(RUN_STATUS.ERROR);
+          return;
+        }
+
+        const { command, args } = startCommand;
         setStatus(RUN_STATUS.STARTING);
         appendOutput(`\n> ${[command, ...args].join(" ")}\n`);
 
@@ -158,6 +192,8 @@ const useProjectRunner = () => {
     clearOutput: () => setOutput([]),
     mountTree,
     writeFile,
+    renamePath,
+    deletePath,
     run,
     stop,
   };

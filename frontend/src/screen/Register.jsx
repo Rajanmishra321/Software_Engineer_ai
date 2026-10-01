@@ -2,6 +2,7 @@ import { useState, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "../config/axios";
 import { getErrorMessage } from "../utils/messages";
+import { setToken } from "../utils/token";
 import { Eye, EyeOff, Mail, Lock, ArrowRight, UserPlus } from "lucide-react";
 import { UserContext } from "../context/UserContext";
 import AuthLayout, { AUTH_INPUT_CLASSES, AUTH_INPUT_ICON_CLASSES } from "../components/AuthLayout";
@@ -26,7 +27,7 @@ const Register = () => {
     axios
       .post("/users/register", { email, password })
       .then((res) => {
-        localStorage.setItem("Token", res.data.user.token);
+        setToken(res.data.user.token);
         // Fix: populate the user context immediately instead of leaving it
         // null until UserAuth's next profile fetch (caused a loading flash
         // right after registering).

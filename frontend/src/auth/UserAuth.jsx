@@ -1,90 +1,45 @@
-// import React, { useContext, useEffect, useState } from 'react'
-// import { useNavigate } from 'react-router-dom'
-// import { UserContext } from '../context/UserContext'
-
-// const UserAuth = ({ children }) => {
-
-//     const { user } = useContext(UserContext)
-//     const [ loading, setLoading ] = useState(true)
-//     const token = localStorage.getItem('Token')
-//     const navigate = useNavigate()
-
-
-
-
-//     useEffect(() => {
-//         if (user) {
-//             setLoading(false)
-//         }
-
-//         if (!token) {
-//             navigate('/login')
-//         }
-
-//         if (!user) {
-//             navigate('/login')
-//         }
-
-//     }, [])
-
-//     if (loading) {
-//         return <div>Loading...</div>
-//     }
-
-
-//     return (
-//         <>
-//             {children}</>
-//     )
-// }
-
-// export default UserAuth
-
-
-import React, { useContext, useEffect, useState } from 'react';
+import { useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserContext } from '../context/UserContext';
-import axios from '../config/axios';
 import Spinner from '../components/ui/Spinner';
+import Button from '../components/ui/Button';
 
+/**
+ * Shown when the session couldn't be checked because the API didn't answer,
+ * instead of silently logging the user out (which is what used to happen
+ * whenever the backend was restarting or stopped).
+ */
+const ServerUnreachable = ({ onRetry }) => (
+    <div className="flex h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-6 text-center">
+        <i className="ri-cloud-off-line text-4xl text-slate-400"></i>
+        <p className="font-medium text-slate-700">Can&apos;t reach the server</p>
+        <p className="max-w-sm text-sm text-slate-500">
+            You&apos;re still signed in. Make sure the backend is running at{' '}
+            <code className="rounded bg-slate-200 px-1 text-slate-700">
+                {import.meta.env.VITE_API_URL}
+            </code>
+            , then try again.
+        </p>
+        <Button onClick={onRetry} className="mt-1 !py-2">
+            <i className="ri-refresh-line"></i>
+            Try again
+        </Button>
+    </div>
+);
+
+/** Gate for routes that need a signed-in user. */
 const UserAuth = ({ children }) => {
-    const { user, setUser, loading: contextLoading } = useContext(UserContext);
-    const [loading, setLoading] = useState(true);
+    const { user, loading, isServerUnreachable, retry } = useContext(UserContext);
     const navigate = useNavigate();
 
     useEffect(() => {
-        const token = localStorage.getItem('Token');
-        
-        // If no token, redirect to login
-        if (!token) {
+        // Only send the user to login once we know there is no session.
+        if (!loading && !isServerUnreachable && !user) {
             navigate('/login');
-            return;
         }
-        
-        // If we have user data already, we can continue
-        if (user) {
-            setLoading(false);
-            return;
-        }
-        
-        // If we have a token but no user (e.g., after page refresh)
-        if (!user && token) {
-            // Make API call to get user data
-            axios.get('/users/profile')
-                .then(response => {
-                    setUser(response.data.user);
-                    setLoading(false);
-                })
-                .catch(error => {
-                    console.error('Failed to fetch user data:', error);
-                    localStorage.removeItem('Token');
-                    navigate('/login');
-                });
-        }
-    }, [navigate, setUser, user]);
+    }, [loading, isServerUnreachable, user, navigate]);
 
-    // Show loading state if either context is loading or this component is loading
-    if (contextLoading || loading) {
+    if (loading) {
         return (
             <div className="flex h-screen items-center justify-center bg-slate-50">
                 <Spinner size={48} className="text-indigo-500" />
@@ -92,7 +47,11 @@ const UserAuth = ({ children }) => {
         );
     }
 
-    return <>{children}</>;
+    if (isServerUnreachable) {
+        return <ServerUnreachable onRetry={retry} />;
+    }
+
+    return user ? children : null;
 };
 
 export default UserAuth;

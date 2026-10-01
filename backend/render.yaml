@@ -1,0 +1,27 @@
+# Render deployment for the API (and its WebSockets).
+#
+# The chat, presence and live code sync hold long-lived socket connections,
+# so this has to be a normal always-on web service, not a serverless
+# function. Set the secret values in Render's dashboard.
+services:
+  - type: web
+    name: soen-api
+    runtime: node
+    plan: free # free instances sleep after ~15 min idle; first request wakes them
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: MONGODB_URI
+        sync: false # MongoDB Atlas connection string
+      - key: JWT_SECRET_KEY
+        sync: false # long random string
+      - key: GOOGLE_AI_KEY
+        sync: false # Google AI Studio key
+      - key: CLIENT_URL
+        sync: false # e.g. https://your-app.web.app - restricts CORS
+      - key: REDIS_URL
+        sync: false # optional: rediss://... (logout falls back to token expiry)

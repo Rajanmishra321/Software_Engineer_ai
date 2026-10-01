@@ -43,17 +43,30 @@ const FloatingParticles = () => (
  * background, floating sparkles and the glassy centered card. Keeping this
  * in one place means both auth screens always look and feel consistent.
  */
-const AuthLayout = ({ icon: Icon, title, subtitle, children, footer }) => (
+const AuthLayout = ({ icon: Icon, title, subtitle, children, footer, aside }) => (
   <motion.div
-    className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-950 via-[#0F172A] to-[#1E1B4B] p-6"
+    className={`relative flex min-h-screen items-center justify-center gap-10 overflow-hidden bg-gradient-to-br from-slate-950 via-[#0F172A] to-[#1E1B4B] p-6 ${
+      aside ? "flex-col lg:flex-row lg:items-center" : ""
+    }`}
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
     transition={{ duration: 0.8, ease: "easeOut" }}
   >
     <FloatingParticles />
 
+    {aside && (
+      <motion.div
+        className="relative w-full max-w-lg pt-6 lg:pt-0"
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 0.6, ease: "easeOut" }}
+      >
+        {aside}
+      </motion.div>
+    )}
+
     <motion.div
-      className="relative w-full max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-lg"
+      className="relative w-full max-w-md shrink-0 rounded-3xl border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-lg"
       initial={{ opacity: 0, y: 20, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}

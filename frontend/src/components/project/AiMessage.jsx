@@ -3,6 +3,7 @@ import Markdown from "markdown-to-jsx";
 import { highlightCode } from "../../config/highlight";
 import { parseMessage } from "../../utils/messages";
 import { listFilePaths } from "../../utils/fileTree";
+import FileIcon from "../ui/FileIcon";
 
 // markdown-to-jsx marks fenced code blocks with a `lang-<name>` class.
 const getLanguage = (className = "") =>
@@ -57,7 +58,7 @@ const GeneratedFiles = ({ paths, onOpenFile }) => (
             onClick={() => onOpenFile?.(path)}
             className="flex w-full items-center gap-1.5 truncate rounded px-1 py-0.5 text-left font-mono text-xs text-slate-300 hover:bg-white/10 hover:text-white"
           >
-            <i className="ri-file-code-line text-slate-500"></i>
+            <FileIcon path={path} />
             {path}
           </button>
         </li>

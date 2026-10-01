@@ -1,6 +1,7 @@
 import { validationResult } from "express-validator";
 import userModel from "../models/userModel.js";
 import * as projectService from "../services/projectService.js";
+import * as messageService from "../services/messageService.js";
 import { isDuplicateKeyError } from "../utils/errors.js";
 
 export const createProject = async (req, res) => {
@@ -63,8 +64,30 @@ export const addUserToProject = async (req, res) => {
 export const getAllUsersInProject = async (req, res) => {
   try {
     const { projectId } = req.params;
+    const loggedInUser = await userModel.findOne({ email: req.user.email });
+
+    // Only collaborators may read a project.
+    await projectService.getProjectForUser({ projectId, userId: loggedInUser._id });
+
     const users = await projectService.getAllUsersInProject({ projectId});
     res.status(200).json(users);
+  } catch (error) {
+    console.log(error);
+    res.status(400).json({ message: error.message });
+  }
+}
+
+
+export const getProjectMessages = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const loggedInUser = await userModel.findOne({ email: req.user.email });
+
+    // Chat history is only for people on the project.
+    await projectService.getProjectForUser({ projectId, userId: loggedInUser._id });
+
+    const messages = await messageService.getProjectMessages({ projectId });
+    res.status(200).json(messages);
   } catch (error) {
     console.log(error);
     res.status(400).json({ message: error.message });
@@ -80,6 +103,11 @@ export const updateFileTree = async (req, res) => {
 
   try {
     const { projectId, fileTree } = req.body;
+    const loggedInUser = await userModel.findOne({ email: req.user.email });
+
+    // Only collaborators may overwrite a project's files.
+    await projectService.getProjectForUser({ projectId, userId: loggedInUser._id });
+
     const updatedProject = await projectService.updateFileTree({ projectId, fileTree });
     res.status(200).json(updatedProject);
   } catch (error) {

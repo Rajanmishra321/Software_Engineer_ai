@@ -16,8 +16,33 @@ export const getAllProjects = async (userId) => {
   if (!userId) {
     throw new Error("User id is required");
   }
-  const projects = await projectModel.find({ users: userId });
+  // Collaborator emails come along so the project list can show who's on
+  // each project without a request per card.
+  const projects = await projectModel
+    .find({ users: userId })
+    .populate("users", "email")
+    .sort({ updatedAt: -1 });
   return projects;
+};
+
+/**
+ * Returns the project when `userId` is one of its collaborators, otherwise
+ * throws. Used wherever a route must not expose another team's project.
+ */
+export const getProjectForUser = async ({ projectId, userId }) => {
+  if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+    throw new Error("Invalid project id");
+  }
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+    throw new Error("Invalid user id");
+  }
+
+  const project = await projectModel.findOne({ _id: projectId, users: userId });
+  if (!project) {
+    throw new Error("User not authorized for this project");
+  }
+
+  return project;
 };
 
 export const addUserToProject = async ({ projectId, users, userId }) => {
@@ -41,22 +66,8 @@ export const addUserToProject = async ({ projectId, users, userId }) => {
     throw new Error("Invalid userId(s) in users array");
   }
 
-  if (!userId) {
-    throw new Error("User id is required");
-  }
-
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    throw new Error("Invalid user id");
-  }
-
-  const project = await projectModel.findOne({
-    _id: projectId,
-    users: userId,
-  });
-
-  if (!project) {
-    throw new Error("User not authorized to add users in the project");
-  }
+  // Only a collaborator may add more people to the project.
+  await getProjectForUser({ projectId, userId });
 
   const updatedProject = await projectModel.findOneAndUpdate(
     {

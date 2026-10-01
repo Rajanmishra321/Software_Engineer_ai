@@ -2,12 +2,16 @@ import { useState, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import axios from "../config/axios";
 import { getErrorMessage } from "../utils/messages";
+import { setToken } from "../utils/token";
 import { Eye, EyeOff, Mail, Lock, LogIn } from "lucide-react";
 import { UserContext } from "../context/UserContext";
 import AuthLayout, { AUTH_INPUT_CLASSES, AUTH_INPUT_ICON_CLASSES } from "../components/AuthLayout";
 import TextField from "../components/ui/TextField";
 import Button from "../components/ui/Button";
 import ErrorBanner from "../components/ui/ErrorBanner";
+import ProjectIntro from "../components/ProjectIntro";
+import DemoAccounts from "../components/DemoAccounts";
+import { SHOW_DEMO_LOGIN } from "../config/demo";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -18,14 +22,14 @@ const Login = () => {
   const navigate = useNavigate();
   const { setUser } = useContext(UserContext);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  // Shared by the form and the one-click demo buttons.
+  const signIn = (emailToUse, passwordToUse) => {
     setError("");
     setIsLoading(true);
     axios
-      .post("/users/login", { email, password })
+      .post("/users/login", { email: emailToUse, password: passwordToUse })
       .then((res) => {
-        localStorage.setItem("Token", res.data.user.token);
+        setToken(res.data.user.token);
         setUser(res.data.user);
         navigate("/");
       })
@@ -35,11 +39,24 @@ const Login = () => {
       });
   };
 
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    signIn(email, password);
+  };
+
+  const handleUseDemoAccount = (demoEmail, demoPassword) => {
+    // Fill the form too, so it's clear which account is being used.
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    signIn(demoEmail, demoPassword);
+  };
+
   return (
     <AuthLayout
       icon={LogIn}
       title="Welcome Back"
       subtitle="Sign in to your creative space"
+      aside={<ProjectIntro />}
       footer={
         <>
           Don&apos;t have an account?{" "}
@@ -90,6 +107,8 @@ const Login = () => {
           {isLoading ? "Signing in..." : "Sign In"}
         </Button>
       </form>
+
+      {SHOW_DEMO_LOGIN && <DemoAccounts onUse={handleUseDemoAccount} disabled={isLoading} />}
     </AuthLayout>
   );
 };

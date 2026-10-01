@@ -34,6 +34,7 @@
 
 
 import axios from 'axios';
+import { clearToken, getToken } from '../utils/token';
 
 // Create an instance of axios
 const axiosInstance = axios.create({
@@ -44,7 +45,7 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
   (config) => {
     // Get the token from localStorage
-    const token = localStorage.getItem('Token');
+    const token = getToken();
     
     // If token exists, add it to the headers
     if (token) {
@@ -69,8 +70,12 @@ axiosInstance.interceptors.response.use(
     // password - redirecting there would reload the page and hide the error.
     const isLoginRequest = error.config?.url?.includes('/users/login');
     if (error.response?.status === 401 && !isLoginRequest) {
-      localStorage.removeItem('Token');
-      window.location.href = '/login';
+      clearToken();
+      // Already on the login screen (e.g. the startup profile check failed):
+      // the auth gate handles it, so don't force an extra page reload.
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

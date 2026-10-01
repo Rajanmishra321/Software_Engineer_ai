@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import AiMessage from "./AiMessage";
+import MessageTicks from "./MessageTicks";
 import { AI_SENDER_EMAIL } from "../../utils/messages";
+import { getMessageStatus } from "../../utils/messageStatus";
 
-const ChatMessage = ({ msg, onOpenFile }) => {
+const ChatMessage = ({ msg, status, onOpenFile }) => {
   const isAi = msg.sender?.email === AI_SENDER_EMAIL;
 
   const bubbleClasses = msg.isOutgoing
@@ -21,6 +23,11 @@ const ChatMessage = ({ msg, onOpenFile }) => {
       ) : (
         <p className="whitespace-pre-wrap break-words text-sm">{msg.message}</p>
       )}
+      {msg.isOutgoing && (
+        <span className="-mb-0.5 mt-0.5 self-end">
+          <MessageTicks status={status} />
+        </span>
+      )}
     </div>
   );
 };
@@ -38,7 +45,7 @@ const EmptyChat = () => (
 );
 
 /** Message list plus the composer at the bottom of the left panel. */
-const ChatPanel = ({ messages, onSend, onOpenFile, isAiThinking }) => {
+const ChatPanel = ({ messages, recipientEmails = [], onSend, onOpenFile, isAiThinking }) => {
   const [draft, setDraft] = useState("");
   const messageBoxRef = useRef(null);
 
@@ -72,7 +79,14 @@ const ChatPanel = ({ messages, onSend, onOpenFile, isAiThinking }) => {
         {messages.length === 0 && !isAiThinking ? (
           <EmptyChat />
         ) : (
-          messages.map((msg) => <ChatMessage key={msg.id} msg={msg} onOpenFile={onOpenFile} />)
+          messages.map((msg) => (
+            <ChatMessage
+              key={msg.key}
+              msg={msg}
+              status={msg.isOutgoing ? getMessageStatus(msg, recipientEmails) : undefined}
+              onOpenFile={onOpenFile}
+            />
+          ))
         )}
         {isAiThinking && (
           <div className="flex w-fit items-center gap-2 rounded-xl bg-slate-100 px-3 py-2 text-xs text-slate-500">

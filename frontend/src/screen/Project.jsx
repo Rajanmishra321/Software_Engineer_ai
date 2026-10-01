@@ -7,23 +7,50 @@ import useProjectRunner from "../hooks/useProjectRunner";
 import ChatPanel from "../components/project/ChatPanel";
 import CollaboratorsPanel from "../components/project/CollaboratorsPanel";
 import AddCollaboratorModal from "../components/project/AddCollaboratorModal";
+import ConfirmDialog from "../components/ui/ConfirmDialog";
 import FileExplorer from "../components/project/FileExplorer";
 import CodeEditor from "../components/project/CodeEditor";
 import { PreviewPane, RunControls, RunOutput } from "../components/project/RunPanel";
-import { getFileContent, listFilePaths, pathExists, pickEntryFile, setFileContent } from "../utils/fileTree";
+import {
+  getFileContent,
+  hashContent,
+  isDirectory,
+  listFilePaths,
+  movePath,
+  pathExists,
+  pickEntryFile,
+  removePath,
+  setFileContent,
+} from "../utils/fileTree";
 import { AI_SENDER_EMAIL, getErrorMessage, parseMessage } from "../utils/messages";
 
-const SAVE_DELAY_MS = 1000;
+// Short enough that collaborators see edits almost immediately, long enough
+// that a burst of typing is sent as one update.
+const SAVE_DELAY_MS = 300;
+
+/** Returns a copy of `object` without `key`. */
+const omitKey = (object, key) =>
+  Object.fromEntries(Object.entries(object).filter(([name]) => name !== key));
 const AI_MENTION = "@ai";
 
 let messageCounter = 0;
-const createChatMessage = (sender, message, isOutgoing) => ({
-  // Date.now() alone collides when two messages arrive in the same ms.
-  id: `${Date.now()}-${messageCounter++}`,
+const createChatMessage = (sender, message, isOutgoing, stored = {}) => ({
+  // `key` is for React and never changes. `id` is the server's id, which
+  // arrives once the message is stored and drives the delivery ticks.
+  key: stored._id ?? `local-${Date.now()}-${messageCounter++}`,
+  id: stored._id ?? null,
+  deliveredTo: stored.deliveredTo ?? [],
+  readBy: stored.readBy ?? [],
   sender,
   message,
   isOutgoing,
 });
+
+/** Stored history uses the same shape as live messages. */
+const toChatMessages = (storedMessages, currentUserEmail) =>
+  storedMessages.map((stored) =>
+    createChatMessage(stored.sender, stored.message, stored.sender?.email === currentUserEmail, stored)
+  );
 
 const Project = () => {
   const { projectId } = useParams();
@@ -43,6 +70,10 @@ const Project = () => {
   const [openFiles, setOpenFiles] = useState([]);
   const [currentFile, setCurrentFile] = useState(null);
   const [unsavedFiles, setUnsavedFiles] = useState(() => new Set());
+  // Incoming versions of files you are mid-edit in, held back until you choose.
+  const [conflicts, setConflicts] = useState({});
+  const [presence, setPresence] = useState([]);
+  const [pathToDelete, setPathToDelete] = useState(null);
   const [isOutputOpen, setIsOutputOpen] = useState(false);
 
   // Socket handlers and debounce timers outlive the render that created
@@ -51,6 +82,54 @@ const Project = () => {
   const userRef = useRef(user);
   const saveTimersRef = useRef(new Map());
   const aiStartCommandRef = useRef(null);
+  // The socket connects straight away so nothing sent in the first moments
+  // is lost; messages that arrive before the stored history does are held
+  // here and appended once it lands, keeping the order right.
+  const isHistoryLoadedRef = useRef(false);
+  const pendingMessagesRef = useRef([]);
+  const unsavedFilesRef = useRef(unsavedFiles);
+  // path -> fingerprint of the version last agreed with collaborators.
+  const baselinesRef = useRef(new Map());
+
+  const setBaseline = useCallback((path, content) => {
+    baselinesRef.current.set(path, hashContent(content));
+  }, []);
+
+  /** Records every file in a tree as the agreed starting point. */
+  const setBaselinesFromTree = useCallback((tree) => {
+    baselinesRef.current = new Map(
+      listFilePaths(tree).map((path) => [path, hashContent(getFileContent(tree, path) ?? "")])
+    );
+  }, []);
+
+  useEffect(() => {
+    unsavedFilesRef.current = unsavedFiles;
+  }, [unsavedFiles]);
+
+  /** Reports messages from others as received or seen, for their ticks. */
+  const reportReceipts = useCallback((ids, status) => {
+    const valid = ids.filter(Boolean);
+    if (valid.length > 0) sendMessage("message-status", { ids: valid, status });
+  }, []);
+
+  const appendMessage = useCallback((chatMessage) => {
+    if (!isHistoryLoadedRef.current) {
+      pendingMessagesRef.current.push(chatMessage);
+      return;
+    }
+    setMessages((prev) => [...prev, chatMessage]);
+  }, []);
+
+  /**
+   * Updates matching messages wherever they are: a receipt can arrive while
+   * a message is still queued waiting for the history to load, so patching
+   * only the rendered list would lose it.
+   */
+  const patchMessages = useCallback((matches, patch) => {
+    const apply = (list) => list.map((msg) => (matches(msg) ? { ...msg, ...patch(msg) } : msg));
+    pendingMessagesRef.current = apply(pendingMessagesRef.current);
+    setMessages(apply);
+  }, []);
 
   const {
     status: runStatus,
@@ -60,6 +139,8 @@ const Project = () => {
     clearOutput,
     mountTree,
     writeFile,
+    renamePath,
+    deletePath,
     run,
     stop,
   } = useProjectRunner();
@@ -81,11 +162,19 @@ const Project = () => {
     [projectId]
   );
 
+  /**
+   * Sends a file to collaborators along with `baseHash`: the version this
+   * edit started from. The receiver applies it only if that is still what
+   * it has, so edits made from an older copy can't silently overwrite work.
+   */
   const broadcastFileUpdate = useCallback((path, content) => {
     sendMessage("project-message", {
-      message: JSON.stringify({ fileUpdate: { path, content } }),
+      message: JSON.stringify({
+        fileUpdate: { path, content, baseHash: baselinesRef.current.get(path) },
+      }),
       sender: userRef.current,
     });
+    baselinesRef.current.set(path, hashContent(content));
   }, []);
 
   const markSaved = useCallback((path) => {
@@ -95,6 +184,10 @@ const Project = () => {
       next.delete(path);
       return next;
     });
+  }, []);
+
+  const dismissConflict = useCallback((path) => {
+    setConflicts((prev) => omitKey(prev, path));
   }, []);
 
   const saveFile = useCallback(
@@ -117,6 +210,47 @@ const Project = () => {
     [...saveTimersRef.current.keys()].forEach(saveFile);
   }, [saveFile]);
 
+  /**
+   * Applies a rename or delete to everything that tracks file paths: open
+   * tabs, the editor, pending saves, unsaved markers and sync baselines.
+   * `to` is null for a delete. Also used for incoming changes, which is why
+   * it doesn't broadcast or persist anything itself.
+   */
+  const applyPathChange = useCallback((from, to) => {
+    const isInside = (path) => path === from || path.startsWith(`${from}/`);
+    const moved = (path) => (to ? `${to}${path.slice(from.length)}` : null);
+
+    // Stop pending saves for paths that no longer exist under that name.
+    for (const [path, timer] of saveTimersRef.current) {
+      if (!isInside(path)) continue;
+      clearTimeout(timer);
+      saveTimersRef.current.delete(path);
+    }
+
+    const remap = (collection, makeEntry) => {
+      const next = new Map();
+      for (const [path, value] of collection) {
+        if (!isInside(path)) next.set(path, value);
+        else if (to) next.set(moved(path), value);
+      }
+      return makeEntry(next);
+    };
+
+    baselinesRef.current = remap(baselinesRef.current, (next) => next);
+    setUnsavedFiles((prev) => remap([...prev].map((path) => [path, true]), (next) => new Set(next.keys())));
+    setConflicts((prev) =>
+      Object.fromEntries(
+        Object.entries(prev)
+          .filter(([path]) => !isInside(path) || to)
+          .map(([path, value]) => [isInside(path) ? moved(path) : path, value])
+      )
+    );
+    setOpenFiles((prev) =>
+      prev.flatMap((path) => (isInside(path) ? (to ? [moved(path)] : []) : [path]))
+    );
+    setCurrentFile((prev) => (prev && isInside(prev) ? moved(prev) : prev));
+  }, []);
+
   const openFile = useCallback((path) => {
     setCurrentFile(path);
     setOpenFiles((prev) => (prev.includes(path) ? prev : [...prev, path]));
@@ -129,13 +263,38 @@ const Project = () => {
     return data;
   }, [projectId]);
 
-  // Load project details, its saved files and the user list.
+  // Load project details, its saved files, chat history and the user list.
   useEffect(() => {
     let cancelled = false;
+    isHistoryLoadedRef.current = false;
+    pendingMessagesRef.current = [];
+
+    const applyHistory = (storedMessages = []) => {
+      if (cancelled) return;
+      isHistoryLoadedRef.current = true;
+      setMessages([
+        ...toChatMessages(storedMessages, userRef.current?.email),
+        ...pendingMessagesRef.current,
+      ]);
+      pendingMessagesRef.current = [];
+    };
 
     loadProject()
-      .then((data) => !cancelled && setFileTree(data.fileTree ?? {}))
+      .then((data) => {
+        if (cancelled) return;
+        const tree = data.fileTree ?? {};
+        setFileTree(tree);
+        setBaselinesFromTree(tree);
+      })
       .catch((err) => !cancelled && setLoadError(getErrorMessage(err, "Could not load this project.")));
+
+    axios
+      .get(`/projects/${projectId}/messages`)
+      .then((res) => applyHistory(res.data))
+      .catch((err) => {
+        console.error("Error fetching chat history:", err);
+        applyHistory();
+      });
 
     axios
       .get("/users/all")
@@ -145,7 +304,7 @@ const Project = () => {
     return () => {
       cancelled = true;
     };
-  }, [loadProject, setFileTree]);
+  }, [loadProject, projectId, setFileTree, setBaselinesFromTree]);
 
   // Save anything still waiting on its debounce when leaving the page.
   // Declared before the socket effect so it runs before the disconnect.
@@ -166,6 +325,7 @@ const Project = () => {
       setUnsavedFiles(new Set());
 
       setFileTree(tree);
+      setBaselinesFromTree(tree);
       aiStartCommandRef.current = startCommand ?? null;
       persistFileTree(tree);
       mountTree(tree);
@@ -180,9 +340,38 @@ const Project = () => {
       setCurrentFile((prev) => (prev && available.has(prev) ? prev : entryFile));
     };
 
-    const applyRemoteFileUpdate = ({ path, content }) => {
+    const applyRemoteFileUpdate = ({ path, content, baseHash }, senderEmail) => {
+      const localContent = getFileContent(fileTreeRef.current, path);
+      const isNewFile = localContent === undefined;
+      // Their edit builds on exactly what we have (or nothing changed, or it
+      // came from an older client without a fingerprint): apply it.
+      const buildsOnOurVersion =
+        baseHash === undefined || baseHash === hashContent(localContent ?? "");
+
+      if (!isNewFile && !buildsOnOurVersion && content !== localContent) {
+        // Their copy diverged from ours - hold it back instead of wiping
+        // out local work, and let the user choose (see ConflictBanner).
+        setConflicts((prev) => ({ ...prev, [path]: { email: senderEmail, content } }));
+        return;
+      }
+
+      setConflicts((prev) => (path in prev ? omitKey(prev, path) : prev));
+      setBaseline(path, content);
       setFileTree(setFileContent(fileTreeRef.current, path, content));
       writeFile(path, content);
+    };
+
+    const applyRemoteFileOp = ({ type, from, to, path }) => {
+      const tree =
+        type === "rename"
+          ? movePath(fileTreeRef.current, from, to)
+          : removePath(fileTreeRef.current, path);
+      if (tree === fileTreeRef.current) return;
+
+      setFileTree(tree);
+      applyPathChange(type === "rename" ? from : path, type === "rename" ? to : null);
+      if (type === "rename") renamePath(from, to);
+      else deletePath(path);
     };
 
     const handleProjectMessage = (data) => {
@@ -192,7 +381,13 @@ const Project = () => {
 
       // File sync messages keep editors in step; they are not chat messages.
       if (payload.fileUpdate) {
-        if (!isOwnMessage) applyRemoteFileUpdate(payload.fileUpdate);
+        if (!isOwnMessage) applyRemoteFileUpdate(payload.fileUpdate, senderEmail);
+        return;
+      }
+
+      // A collaborator renamed or deleted something.
+      if (payload.fileOp) {
+        if (!isOwnMessage) applyRemoteFileOp(payload.fileOp);
         return;
       }
 
@@ -204,20 +399,62 @@ const Project = () => {
       }
 
       if (!isOwnMessage) {
-        setMessages((prev) => [...prev, createChatMessage(data.sender, data.message, false)]);
+        appendMessage(createChatMessage(data.sender, data.message, false, { _id: data.id }));
+        // Tell the sender it arrived, and that it was seen if this tab is
+        // actually in front of the user.
+        reportReceipts([data.id], document.visibilityState === "visible" ? "read" : "delivered");
       }
     };
 
+    // Someone received or read messages: update the ticks on ours.
+    const handleMessageStatus = ({ ids, status, email }) => {
+      const updated = new Set(ids);
+      patchMessages(
+        (msg) => msg.id && updated.has(msg.id),
+        (msg) => ({
+          deliveredTo: [...new Set([...msg.deliveredTo, email])],
+          // Reading implies delivery, matching how the server stores it.
+          readBy: status === "read" ? [...new Set([...msg.readBy, email])] : msg.readBy,
+        })
+      );
+    };
+
     const unsubscribe = receiveMessage("project-message", handleProjectMessage);
+    const unsubscribePresence = receiveMessage("presence", setPresence);
+    const unsubscribeStatus = receiveMessage("message-status", handleMessageStatus);
     return () => {
       unsubscribe();
+      unsubscribePresence();
+      unsubscribeStatus();
       disconnectSocket();
+      setPresence([]);
     };
-  }, [projectId, setFileTree, persistFileTree, mountTree, writeFile]);
+  }, [
+    projectId,
+    appendMessage,
+    patchMessages,
+    reportReceipts,
+    applyPathChange,
+    renamePath,
+    deletePath,
+    setFileTree,
+    setBaseline,
+    setBaselinesFromTree,
+    persistFileTree,
+    mountTree,
+    writeFile,
+  ]);
 
   const handleSendMessage = (text) => {
-    setMessages((prev) => [...prev, createChatMessage(user, text, true)]);
-    sendMessage("project-message", { message: text, sender: user });
+    const chatMessage = createChatMessage(user, text, true);
+    appendMessage(chatMessage);
+
+    // The server replies with the stored message's id, which turns the
+    // "sending" clock into a sent tick.
+    sendMessage("project-message", { message: text, sender: user }, (reply) => {
+      if (!reply?.id) return;
+      patchMessages((msg) => msg.key === chatMessage.key, () => ({ id: reply.id }));
+    });
     if (text.includes(AI_MENTION)) setIsAiThinking(true);
   };
 
@@ -235,6 +472,69 @@ const Project = () => {
       path,
       setTimeout(() => saveFile(path), SAVE_DELAY_MS)
     );
+  };
+
+  /** Renames a file or folder; returns an error message, or null on success. */
+  const handleRenamePath = (from, to) => {
+    if (!to) return "Enter a name";
+    if (to.endsWith("/")) return "Name can't end with /";
+    if (from === to) return null;
+    if (pathExists(fileTreeRef.current, to)) return "A file or folder with that name already exists";
+
+    const tree = movePath(fileTreeRef.current, from, to);
+    if (tree === fileTreeRef.current) return "Could not rename that item";
+
+    setFileTree(tree);
+    applyPathChange(from, to);
+    persistFileTree(tree);
+    renamePath(from, to);
+    sendMessage("project-message", {
+      message: JSON.stringify({ fileOp: { type: "rename", from, to } }),
+      sender: userRef.current,
+    });
+    return null;
+  };
+
+  /** Deletes a file or folder, after the confirmation dialog. */
+  const handleDeletePath = (path) => {
+    const tree = removePath(fileTreeRef.current, path);
+    if (tree === fileTreeRef.current) return;
+
+    setFileTree(tree);
+    applyPathChange(path, null);
+    persistFileTree(tree);
+    deletePath(path);
+    sendMessage("project-message", {
+      message: JSON.stringify({ fileOp: { type: "delete", path } }),
+      sender: userRef.current,
+    });
+  };
+
+  /** Takes the collaborator's held-back version, discarding your edits to it. */
+  const acceptConflict = (path) => {
+    const conflict = conflicts[path];
+    if (!conflict) return;
+
+    // Drop the pending save so your old text isn't broadcast afterwards.
+    clearTimeout(saveTimersRef.current.get(path));
+    saveTimersRef.current.delete(path);
+
+    setBaseline(path, conflict.content);
+    setFileTree(setFileContent(fileTreeRef.current, path, conflict.content));
+    writeFile(path, conflict.content);
+    markSaved(path);
+    setConflicts((prev) => omitKey(prev, path));
+  };
+
+  /**
+   * Keeps your version: their content becomes the agreed baseline, so your
+   * next save is accepted by everyone instead of conflicting again.
+   */
+  const keepMine = (path) => {
+    const conflict = conflicts[path];
+    if (conflict) setBaseline(path, conflict.content);
+    dismissConflict(path);
+    saveFile(path);
   };
 
   const handleCloseFile = (path) => {
@@ -279,9 +579,45 @@ const Project = () => {
     }
   };
 
+  // Mark other people's messages as read while this tab is in front of the
+  // user, so their ticks turn blue (and catch up after switching back).
+  useEffect(() => {
+    const markVisibleAsRead = () => {
+      if (document.visibilityState !== "visible") return;
+      const unread = messages
+        .filter((msg) => !msg.isOutgoing && msg.id && !msg.readBy.includes(user?.email))
+        .map((msg) => msg.id);
+      reportReceipts(unread, "read");
+    };
+
+    markVisibleAsRead();
+    document.addEventListener("visibilitychange", markVisibleAsRead);
+    return () => document.removeEventListener("visibilitychange", markVisibleAsRead);
+  }, [messages, user?.email, reportReceipts]);
+
+  // Tell collaborators which file is open so they can see where you work.
+  useEffect(() => {
+    sendMessage("presence", { file: currentFile });
+  }, [currentFile]);
+
+  // Other people's open files, keyed by path, for the explorer markers.
+  const viewersByFile = useMemo(() => {
+    const byFile = new Map();
+    for (const entry of presence) {
+      if (!entry.file || entry.email === user?.email) continue;
+      byFile.set(entry.file, [...(byFile.get(entry.file) ?? []), entry.email]);
+    }
+    return byFile;
+  }, [presence, user?.email]);
+
   // Until the full project loads, users may still be plain ids (from Home).
   const members = useMemo(() => (project?.users ?? []).filter((member) => member?.email), [project]);
   const memberIds = useMemo(() => new Set(members.map((member) => member._id)), [members]);
+  // Everyone your messages have to reach before they count as delivered/read.
+  const recipientEmails = useMemo(
+    () => members.map((member) => member.email).filter((email) => email !== user?.email),
+    [members, user?.email]
+  );
   const hasFiles = Object.keys(fileTree).length > 0;
 
   if (loadError) {
@@ -322,6 +658,7 @@ const Project = () => {
 
         <ChatPanel
           messages={messages}
+          recipientEmails={recipientEmails}
           onSend={handleSendMessage}
           onOpenFile={(path) => pathExists(fileTreeRef.current, path) && openFile(path)}
           isAiThinking={isAiThinking}
@@ -330,6 +667,7 @@ const Project = () => {
         <CollaboratorsPanel
           isOpen={isSidePanelOpen}
           users={members}
+          presence={presence}
           onClose={() => setIsSidePanelOpen(false)}
           onAddClick={() => setIsModalOpen(true)}
         />
@@ -340,8 +678,11 @@ const Project = () => {
           fileTree={fileTree}
           currentFile={currentFile}
           unsavedFiles={unsavedFiles}
+          viewersByFile={viewersByFile}
           onOpenFile={openFile}
           onCreateFile={handleCreateFile}
+          onRenamePath={handleRenamePath}
+          onDeletePath={setPathToDelete}
         />
 
         <div className="flex min-w-0 flex-grow flex-col">
@@ -351,9 +692,12 @@ const Project = () => {
             content={currentFile ? getFileContent(fileTree, currentFile) ?? "" : ""}
             unsavedFiles={unsavedFiles}
             hasFiles={hasFiles}
+            conflict={currentFile ? conflicts[currentFile] : undefined}
             onSelectFile={setCurrentFile}
             onCloseFile={handleCloseFile}
             onChange={handleEditorChange}
+            onAcceptConflict={acceptConflict}
+            onDismissConflict={keepMine}
             toolbar={
               <RunControls status={runStatus} disabled={!hasFiles} onRun={handleRun} onStop={stop} />
             }
@@ -370,6 +714,21 @@ const Project = () => {
           <PreviewPane url={previewUrl} onUrlChange={setPreviewUrl} onClose={() => setPreviewUrl(null)} />
         )}
       </section>
+
+      <ConfirmDialog
+        isOpen={Boolean(pathToDelete)}
+        title={`Delete ${pathToDelete?.split("/").pop()}?`}
+        message={
+          pathToDelete && isDirectory(fileTree, pathToDelete)
+            ? "This folder and everything in it will be deleted for all collaborators."
+            : "This file will be deleted for all collaborators."
+        }
+        onConfirm={() => {
+          handleDeletePath(pathToDelete);
+          setPathToDelete(null);
+        }}
+        onCancel={() => setPathToDelete(null)}
+      />
 
       <AddCollaboratorModal
         isOpen={isModalOpen}
