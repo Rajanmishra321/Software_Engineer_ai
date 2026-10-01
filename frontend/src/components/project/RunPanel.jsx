@@ -12,12 +12,19 @@ const STATUS_LABELS = {
 const BUSY_STATUSES = new Set([RUN_STATUS.BOOTING, RUN_STATUS.INSTALLING, RUN_STATUS.STARTING]);
 
 /** Run/Stop controls shown in the editor toolbar. */
-export const RunControls = ({ status, disabled, onRun, onStop }) => {
+export const RunControls = ({ status, isPreparing, disabled, onRun, onStop }) => {
   const busy = BUSY_STATUSES.has(status);
   const isActive = busy || status === RUN_STATUS.RUNNING;
 
   return (
     <>
+      {/* Dependencies are being fetched up front so Run is quick. */}
+      {isPreparing && status === RUN_STATUS.IDLE && (
+        <span className="hidden items-center gap-1.5 text-xs text-slate-400 sm:flex">
+          <i className="ri-loader-4-line animate-spin"></i>
+          Preparing dependencies...
+        </span>
+      )}
       {status !== RUN_STATUS.IDLE && (
         <span
           className={`hidden text-xs sm:inline ${

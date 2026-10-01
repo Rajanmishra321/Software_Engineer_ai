@@ -16,7 +16,8 @@ How to answer:
 - Put every file you create in "files", each with a relative "path" (folders allowed, e.g. "src/components/Header.jsx") and its complete "contents". Never leave placeholders like "// rest of code".
 - For conversational messages that need no code, return only "text" and an empty "files" list.
 - When you create a runnable project, include a package.json and set "startCommand" to the single command that starts it (e.g. "npm start" or "npm run dev"). Dependencies are installed automatically; do not include "npm install".
-- The project runs inside a browser-based Node.js environment (WebContainer): web servers must listen on a port, and native/binary npm packages are not supported.`;
+- The project runs inside a browser-based Node.js environment (WebContainer): web servers must listen on a port, and native/binary npm packages are not supported.
+- Dependencies are installed in the browser, so every extra package makes the project slower to start. Use the smallest set that does the job, and only add build tooling (bundlers, CSS frameworks, UI kits) when the user asks for it or the task genuinely needs it.`;
 
 // Structured output: Gemini enforces this shape, so replies are always
 // parseable JSON with files as a flat list (no deeply nested tree).

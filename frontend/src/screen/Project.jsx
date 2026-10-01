@@ -137,6 +137,8 @@ const Project = () => {
     previewUrl,
     setPreviewUrl,
     clearOutput,
+    isPreparing,
+    prepareDependencies,
     mountTree,
     writeFile,
     renamePath,
@@ -285,6 +287,11 @@ const Project = () => {
         const tree = data.fileTree ?? {};
         setFileTree(tree);
         setBaselinesFromTree(tree);
+        // Put the files in the container up front and start installing
+        // dependencies straight away, so Run doesn't have to wait for them.
+        if (Object.keys(tree).length > 0) {
+          mountTree(tree).then(() => prepareDependencies(tree));
+        }
       })
       .catch((err) => !cancelled && setLoadError(getErrorMessage(err, "Could not load this project.")));
 
@@ -304,7 +311,7 @@ const Project = () => {
     return () => {
       cancelled = true;
     };
-  }, [loadProject, projectId, setFileTree, setBaselinesFromTree]);
+  }, [loadProject, projectId, setFileTree, setBaselinesFromTree, mountTree, prepareDependencies]);
 
   // Save anything still waiting on its debounce when leaving the page.
   // Declared before the socket effect so it runs before the disconnect.
@@ -328,7 +335,7 @@ const Project = () => {
       setBaselinesFromTree(tree);
       aiStartCommandRef.current = startCommand ?? null;
       persistFileTree(tree);
-      mountTree(tree);
+      mountTree(tree).then(() => prepareDependencies(tree));
 
       const paths = listFilePaths(tree);
       const available = new Set(paths);
@@ -442,6 +449,7 @@ const Project = () => {
     setBaselinesFromTree,
     persistFileTree,
     mountTree,
+    prepareDependencies,
     writeFile,
   ]);
 
@@ -699,7 +707,13 @@ const Project = () => {
             onAcceptConflict={acceptConflict}
             onDismissConflict={keepMine}
             toolbar={
-              <RunControls status={runStatus} disabled={!hasFiles} onRun={handleRun} onStop={stop} />
+              <RunControls
+                status={runStatus}
+                isPreparing={isPreparing}
+                disabled={!hasFiles}
+                onRun={handleRun}
+                onStop={stop}
+              />
             }
           />
           <RunOutput
